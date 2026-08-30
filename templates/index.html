@@ -1,0 +1,75 @@
+<!doctype html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+    <meta name="theme-color" content="#101820">
+    <title>Alarm Help</title>
+    <link rel="stylesheet" href="/static/app.css">
+</head>
+<body>
+<main class="app-shell">
+    <header class="activity-card card" aria-live="polite">
+        <strong>Alarm Activity</strong>
+        <time id="activity-time">—</time>
+        <span id="activity-name">Waiting for alarm activity…</span>
+        <span id="activity-state" class="state-badge">—</span>
+    </header>
+
+    <section id="workspace" class="workspace history-collapsed">
+        <aside id="history-sidebar" class="history-sidebar card" aria-label="Recent Alarm History">
+            <div class="panel-heading">
+                <h2>Recent Alarm History</h2>
+                <button id="close-history" type="button" aria-controls="history-sidebar" aria-expanded="false" title="Close history">◀ Close</button>
+            </div>
+            <button id="refresh-history" type="button">Refresh History</button>
+            <p id="history-status" class="muted">No alarm history</p>
+            <div class="history-scroll">
+                <table>
+                    <thead><tr><th>Time</th><th>Tag Name</th></tr></thead>
+                    <tbody id="history-body"></tbody>
+                </table>
+            </div>
+        </aside>
+
+        <button id="open-history" class="open-history" type="button" aria-controls="history-sidebar" aria-expanded="false" title="Open recent alarm history">▶ <span>History</span></button>
+
+        <article class="detail-card card">
+            <div class="detail-toolbar">
+                <div>
+                    <p class="eyebrow">Operator troubleshooting</p>
+                    <h1>Alarm Detail</h1>
+                </div>
+                <div class="refresh-controls">
+                    <button id="refresh-latest" type="button">Refresh Latest</button>
+                    <label for="auto-refresh">Auto-refresh</label>
+                    <select id="auto-refresh">
+                        <option value="0">Off</option>
+                        <option value="5">5 sec</option>
+                        <option value="10" selected>10 sec</option>
+                        <option value="30">30 sec</option>
+                    </select>
+                </div>
+            </div>
+            <div class="latest-navigation">
+                <p id="newer-alarm" class="newer hidden">Newer alarm available</p>
+                <button id="back-latest" class="hidden" type="button">Back to Latest Alarm</button>
+            </div>
+            <p id="detail-status" class="muted">Loading latest alarm…</p>
+            <div id="detail-content" class="hidden">
+                <dl class="metadata">
+                    <div><dt>Time</dt><dd id="detail-time"></dd></div>
+                    <div><dt>Tag Name</dt><dd id="detail-name"></dd></div>
+                    <div class="wide"><dt>Kepware Path</dt><dd id="detail-path"></dd></div>
+                    <div><dt>Priority</dt><dd id="detail-priority"></dd></div>
+                    <div><dt>State</dt><dd id="detail-state"></dd></div>
+                    <div><dt>Value</dt><dd id="detail-value"></dd></div>
+                </dl>
+                <div id="knowledge" class="knowledge"></div>
+            </div>
+        </article>
+    </section>
+</main>
+<script src="/static/app.js" defer></script>
+</body>
+</html>
