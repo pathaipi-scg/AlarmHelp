@@ -31,9 +31,29 @@ function imageUrl(url) {
     } catch (_error) { return ""; }
 }
 
-function renderKnowledge(knowledge) {
+function renderCompactMetadata(alarm) {
+    const metadata = document.createElement("dl");
+    metadata.className = "compact-metadata";
+    [
+        ["Time", displayTime(alarm.activated_at)],
+        ["Kepware Path", text(alarm.kepware_path)],
+        ["Value", text(alarm.value)],
+    ].forEach(([label, value]) => {
+        const row = document.createElement("div");
+        const term = document.createElement("dt");
+        const detail = document.createElement("dd");
+        term.textContent = label;
+        detail.textContent = value;
+        row.append(term, detail);
+        metadata.appendChild(row);
+    });
+    return metadata;
+}
+
+function renderKnowledge(knowledge, alarm) {
     const host = document.getElementById("knowledge");
     host.replaceChildren();
+    let hasKnowledge = false;
     const sections = [
         ["description", "Description / Meaning"],
         ["how_to_check", "How to Check / Troubleshooting"],
@@ -44,42 +64,45 @@ function renderKnowledge(knowledge) {
     sections.forEach(([key, title]) => {
         const content = knowledge?.sections?.[key] || {};
         const images = Array.isArray(content.images) ? content.images : [];
-        if (!content.text && !images.length) return;
-        const section = document.createElement("section");
-        section.className = `knowledge-section${key === "safety_warning" ? " safety" : ""}`;
-        const heading = document.createElement("h3");
-        heading.textContent = title;
-        section.appendChild(heading);
-        if (content.text) {
-            const paragraph = document.createElement("p");
-            paragraph.className = "knowledge-text";
-            paragraph.textContent = content.text;
-            section.appendChild(paragraph);
+        if (content.text || images.length) {
+            hasKnowledge = true;
+            const section = document.createElement("section");
+            section.className = `knowledge-section${key === "safety_warning" ? " safety" : ""}`;
+            const heading = document.createElement("h3");
+            heading.textContent = title;
+            section.appendChild(heading);
+            if (content.text) {
+                const paragraph = document.createElement("p");
+                paragraph.className = "knowledge-text";
+                paragraph.textContent = content.text;
+                section.appendChild(paragraph);
+            }
+            if (images.length) {
+                const gallery = document.createElement("div");
+                gallery.className = "knowledge-images";
+                images.forEach((item) => {
+                    const source = imageUrl(item.url);
+                    if (!source) return;
+                    const figure = document.createElement("figure");
+                    const image = document.createElement("img");
+                    image.src = source;
+                    image.alt = item.caption || title;
+                    image.loading = "lazy";
+                    figure.appendChild(image);
+                    if (item.caption) {
+                        const caption = document.createElement("figcaption");
+                        caption.textContent = item.caption;
+                        figure.appendChild(caption);
+                    }
+                    gallery.appendChild(figure);
+                });
+                section.appendChild(gallery);
+            }
+            host.appendChild(section);
         }
-        if (images.length) {
-            const gallery = document.createElement("div");
-            gallery.className = "knowledge-images";
-            images.forEach((item) => {
-                const source = imageUrl(item.url);
-                if (!source) return;
-                const figure = document.createElement("figure");
-                const image = document.createElement("img");
-                image.src = source;
-                image.alt = item.caption || title;
-                image.loading = "lazy";
-                figure.appendChild(image);
-                if (item.caption) {
-                    const caption = document.createElement("figcaption");
-                    caption.textContent = item.caption;
-                    figure.appendChild(caption);
-                }
-                gallery.appendChild(figure);
-            });
-            section.appendChild(gallery);
-        }
-        host.appendChild(section);
+        if (key === "description") host.appendChild(renderCompactMetadata(alarm));
     });
-    if (!host.childElementCount) {
+    if (!hasKnowledge) {
         const empty = document.createElement("p");
         empty.className = "muted";
         empty.textContent = "No troubleshooting knowledge is available for this tag.";
@@ -100,13 +123,7 @@ function renderDetail(data) {
     status.textContent = viewingHistory ? "Viewing selected history event" : "Showing latest alarm";
     status.className = "muted";
     content.classList.remove("hidden");
-    document.getElementById("detail-time").textContent = displayTime(alarm.activated_at);
-    document.getElementById("detail-name").textContent = text(alarm.tag_name);
-    document.getElementById("detail-path").textContent = text(alarm.kepware_path);
-    document.getElementById("detail-priority").textContent = text(alarm.priority);
-    document.getElementById("detail-state").textContent = text(alarm.state);
-    document.getElementById("detail-value").textContent = text(alarm.value);
-    renderKnowledge(data.knowledge);
+    renderKnowledge(data.knowledge, alarm);
 }
 
 async function fetchJson(url) {

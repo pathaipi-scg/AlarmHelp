@@ -19,6 +19,27 @@ class AlarmHelpTests(unittest.TestCase):
         for forbidden in ("Open Tag", "Save", "Delete", "Alarm Configuration", "Knowledge editing"):
             self.assertNotIn(forbidden, html)
 
+    def test_alarm_detail_uses_compact_metadata_below_description(self):
+        html = (ROOT / "templates" / "index.html").read_text(encoding="utf-8")
+        javascript = (ROOT / "static" / "app.js").read_text(encoding="utf-8")
+        stylesheet = (ROOT / "static" / "app.css").read_text(encoding="utf-8")
+        self.assertNotIn("Operator troubleshooting", html)
+        self.assertNotIn("Alarm Detail", html)
+        self.assertNotIn('class="metadata"', html)
+        for removed_id in ("detail-name", "detail-priority", "detail-state"):
+            self.assertNotIn(removed_id, html)
+            self.assertNotIn(removed_id, javascript)
+        self.assertIn('metadata.className = "compact-metadata"', javascript)
+        self.assertIn('["Time", displayTime(alarm.activated_at)]', javascript)
+        self.assertIn('["Kepware Path", text(alarm.kepware_path)]', javascript)
+        self.assertIn('["Value", text(alarm.value)]', javascript)
+        self.assertIn('if (key === "description") host.appendChild(renderCompactMetadata(alarm));', javascript)
+        self.assertLess(
+            javascript.index('["description", "Description / Meaning"]'),
+            javascript.index('["how_to_check", "How to Check / Troubleshooting"]'),
+        )
+        self.assertIn("overflow-wrap: anywhere", stylesheet)
+
     def test_javascript_preserves_history_and_latest_workflows(self):
         javascript = (ROOT / "static" / "app.js").read_text(encoding="utf-8")
         self.assertIn('fetchJson("/api/alarm-help/latest")', javascript)
