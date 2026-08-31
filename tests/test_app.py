@@ -39,6 +39,9 @@ class AlarmHelpTests(unittest.TestCase):
             javascript.index('["how_to_check", "How to Check / Troubleshooting"]'),
         )
         self.assertIn("overflow-wrap: anywhere", stylesheet)
+        self.assertIn(".compact-metadata { display: flex; flex-wrap: wrap", stylesheet)
+        self.assertIn(".compact-metadata div:nth-child(2) { flex: 1 1 360px; }", stylesheet)
+        self.assertIn('.compact-metadata dt::after { content: ":"; }', stylesheet)
 
     def test_javascript_preserves_history_and_latest_workflows(self):
         javascript = (ROOT / "static" / "app.js").read_text(encoding="utf-8")
