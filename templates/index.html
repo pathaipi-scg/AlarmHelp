@@ -20,9 +20,9 @@
         <aside id="history-sidebar" class="history-sidebar card" aria-label="Recent Alarm History">
             <div class="panel-heading">
                 <h2>Recent Alarm History</h2>
+                <button id="refresh-history" type="button">Refresh History</button>
                 <button id="close-history" type="button" aria-controls="history-sidebar" aria-expanded="false" title="Close history">◀ Close</button>
             </div>
-            <button id="refresh-history" type="button">Refresh History</button>
             <p id="history-status" class="muted">No alarm history</p>
             <div class="history-scroll">
                 <table>
@@ -36,6 +36,10 @@
 
         <article class="detail-card card">
             <div class="detail-toolbar">
+                <div class="latest-navigation">
+                    <p id="newer-alarm" class="newer hidden">Newer alarm available</p>
+                    <button id="back-latest" class="hidden" type="button">Back to Latest Alarm</button>
+                </div>
                 <div class="refresh-controls">
                     <button id="refresh-latest" type="button">Refresh Latest</button>
                     <label for="auto-refresh">Auto-refresh</label>
@@ -46,10 +50,6 @@
                         <option value="30">30 sec</option>
                     </select>
                 </div>
-            </div>
-            <div class="latest-navigation">
-                <p id="newer-alarm" class="newer hidden">Newer alarm available</p>
-                <button id="back-latest" class="hidden" type="button">Back to Latest Alarm</button>
             </div>
             <p id="detail-status" class="muted">Loading latest alarm…</p>
             <div id="detail-content" class="hidden">
