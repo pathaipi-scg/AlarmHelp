@@ -20,15 +20,17 @@
         <aside id="history-sidebar" class="history-sidebar card" aria-label="Recent Alarm History">
             <div class="panel-heading">
                 <h2>Recent Alarm History</h2>
+                <button id="open-pareto" type="button">Pareto</button>
                 <button id="refresh-history" type="button">Refresh History</button>
                 <button id="close-history" type="button" aria-controls="history-sidebar" aria-expanded="false" title="Close history">◀ Close</button>
             </div>
             <p id="history-status" class="muted">No alarm history</p>
-            <div class="history-scroll">
+            <div id="history-scroll" class="history-scroll" tabindex="0" aria-label="Alarm history">
                 <table>
                     <thead><tr><th>Time</th><th>Tag Name</th></tr></thead>
                     <tbody id="history-body"></tbody>
                 </table>
+                <button id="load-older" type="button">Load older alarms</button>
             </div>
         </aside>
 
@@ -51,6 +53,14 @@
                     </select>
                 </div>
             </div>
+            <section id="pareto-panel" class="hidden" aria-label="Alarm Pareto">
+                <div class="panel-heading"><h2 id="pareto-title">Alarm Pareto - Last 24 Hours</h2>
+                <label>Time frame <select id="pareto-window"><option value="24h">24 Hours</option><option value="48h">48 Hours</option><option value="1w">1 Week</option><option value="1m">1 Month</option></select></label>
+                <button id="back-alarm" type="button">Back to Alarm</button></div>
+                <p id="pareto-status" role="status"></p>
+                <div id="pareto-chart" class="pareto-scroll"></div>
+                <div class="pareto-scroll"><table class="pareto-table"><thead><tr><th>Tag Name / Kepware Path</th><th>Count</th><th>Percentage</th><th>Cumulative %</th></tr></thead><tbody id="pareto-body"></tbody></table></div>
+            </section>
             <p id="detail-status" class="muted">Loading latest alarm…</p>
             <div id="detail-content" class="hidden">
                 <div id="knowledge" class="knowledge"></div>

@@ -46,7 +46,7 @@ class AlarmHelpTests(unittest.TestCase):
     def test_javascript_preserves_history_and_latest_workflows(self):
         javascript = (ROOT / "static" / "app.js").read_text(encoding="utf-8")
         self.assertIn('fetchJson("/api/alarm-help/latest")', javascript)
-        self.assertIn('fetchJson("/api/alarm-help/recent?limit=5")', javascript)
+        self.assertIn('/api/alarm-help/history?limit=50', javascript)
         self.assertIn('loadHistoryDetail(alarm.history_id)', javascript)
         self.assertIn('classList.toggle("selected"', javascript)
         self.assertIn('setHistoryOpen(true)', javascript)

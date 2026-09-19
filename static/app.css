@@ -82,3 +82,15 @@ figcaption { margin-top: 3px; color: var(--muted); font-size: 11px; overflow-wra
     .activity-card { grid-template-columns: 1fr; }
     .compact-metadata div:nth-child(1), .compact-metadata div:nth-child(3) { white-space: normal; }
 }
+
+.history-sidebar { display: flex; flex-direction: column; overflow: hidden; }
+.history-scroll { min-height: 0; overflow-y: auto; overflow-x: hidden; overflow-anchor: none; }
+.history-scroll thead { position: sticky; top: 0; background: var(--panel); }
+#load-older { margin-top: 6px; width: 100%; }
+.pareto-scroll { max-width: 100%; overflow-x: auto; margin-top: 8px; }
+.pareto-table { min-width: 650px; }
+.pareto-table th:first-child { width: 55%; }
+.pareto-table td { white-space: normal; overflow-wrap: anywhere; }
+.pareto-table small { display: block; color: var(--muted); }
+#pareto-panel svg { display: block; }
+button:disabled { opacity: .6; cursor: default; }

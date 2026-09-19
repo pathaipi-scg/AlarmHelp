@@ -8,6 +8,7 @@ from urllib.request import Request, urlopen
 from fastapi import FastAPI, Query, Response
 from fastapi.responses import HTMLResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
+import history_store
 
 
 ROOT = Path(__file__).resolve().parent
@@ -71,7 +72,8 @@ def activity():
 
 @app.get("/api/alarm-help/latest")
 def latest():
-    return upstream_get("/api/alarm-help/latest")
+    response = upstream_get("/api/alarm-help/latest")
+    return sql_detail_fallback(response)
 
 
 @app.get("/api/alarm-help/recent")
@@ -79,9 +81,38 @@ def recent(limit: int = Query(default=5, ge=1, le=100)):
     return upstream_get("/api/alarm-help/recent", {"limit": limit})
 
 
+def sql_detail_fallback(response, history_id=None):
+    if response.status_code >= 400 and history_store.configured():
+        try:
+            rows = history_store.history_page(limit=1, history_id=history_id)["alarms"]
+            return {"has_alarm": bool(rows), "alarm": rows[0] if rows else None,
+                    "knowledge": None, "knowledge_unavailable": True}
+        except Exception:
+            pass
+    return response
+
+
+@app.get("/api/alarm-help/history")
+def history_list(limit: int = Query(default=50, ge=1, le=100),
+                 before: int | None = Query(default=None, ge=1, le=9223372036854775807)):
+    try:
+        return history_store.history_page(limit, before)
+    except Exception:
+        return JSONResponse({"error": "SQL alarm history is unavailable. Check AlarmHelp SQL configuration."}, status_code=503)
+
+
+@app.get("/api/alarm-help/pareto")
+def pareto(window: str = Query(default="24h", pattern="^(24h|48h|1w|1m)$")):
+    try:
+        return history_store.pareto(window)
+    except Exception:
+        return JSONResponse({"error": "SQL alarm Pareto is unavailable. Check AlarmHelp SQL configuration."}, status_code=503)
+
+
 @app.get("/api/alarm-help/history/{history_id}")
 def history(history_id: int):
-    return upstream_get(f"/api/alarm-help/history/{history_id}")
+    response = upstream_get(f"/api/alarm-help/history/{history_id}")
+    return sql_detail_fallback(response, history_id)
 
 
 @app.get("/api/tag-knowledge/attachment")
