@@ -4,6 +4,23 @@ from unittest.mock import MagicMock, patch
 import history_store as store
 import app
 
+# Exact production column names. SQLite is only a local query-execution fixture;
+# tests translate TOP/DATEADD/COUNT_BIG syntax, never the column references.
+PRODUCTION_SCHEMA = """
+CREATE TABLE dbo.Alarm_History (
+    HistoryId BIGINT PRIMARY KEY,
+    AlarmId INTEGER,
+    TagId BIGINT,
+    TagPath NVARCHAR(1000),
+    AlarmMode NVARCHAR(20),
+    ThresholdHigh FLOAT,
+    ThresholdLow FLOAT,
+    CurrentValue FLOAT,
+    Mp3File NVARCHAR(500),
+    CreatedTime TIMESTAMP
+)
+"""
+
 class HistoryStoreTests(unittest.TestCase):
     def setUp(self):
         self.conn = MagicMock()
@@ -15,7 +32,7 @@ class HistoryStoreTests(unittest.TestCase):
         self.addCleanup(self.patch.stop)
 
     def row(self, id):
-        return (id, 7, 'Factory/Line/Alarm', 1, datetime(2026, 9, 19), 2)
+        return (id, 7, 'Factory/Line/Alarm', 1, datetime(2026, 9, 19))
 
     def test_initial_page_and_cursor(self):
         self.rows.return_value = [self.row(i) for i in range(101, 50, -1)]
@@ -45,7 +62,7 @@ class HistoryStoreTests(unittest.TestCase):
         self.query.assert_called_once()
 
     def test_all_windows_group_count_and_percentages(self):
-        for window, hours in [('24h',24), ('48h',48), ('1w',168), ('1m',720)]:
+        for window, hours in [('24h',24), ('48h',48), ('1w',168), ('7d',168), ('1m',720), ('30d',720)]:
             with self.subTest(window=window):
                 # SQL returns one group per configured AlarmId, even for identical labels.
                 self.rows.return_value = [(7,'A/B/Alarm',3), (8,'A/C/Alarm',1)]
@@ -86,8 +103,17 @@ class HistoryStoreTests(unittest.TestCase):
 
     def test_database_failure_is_graceful(self):
         self.query.side_effect = RuntimeError('database offline')
-        self.assertEqual(app.history_list(50, None).status_code,503)
-        self.assertEqual(app.pareto('24h').status_code,503)
+        with self.assertLogs('app', level='ERROR') as logs:
+            history_response = app.history_list(50, None)
+            pareto_response = app.pareto('24h')
+        self.assertEqual(history_response.status_code,503)
+        self.assertEqual(pareto_response.status_code,503)
+        self.assertIn('database offline', '\n'.join(logs.output))
+        self.assertIn('before=None', logs.output[0])
+        self.assertIn('window=24h', logs.output[1])
+        self.assertTrue(all(record.exc_info for record in logs.records))
+        self.assertNotIn(b'database offline', history_response.body)
+        self.assertNotIn(b'database offline', pareto_response.body)
 
 class SqlAggregationFixtureTests(unittest.TestCase):
     def test_real_grouping_and_window_boundaries(self):
@@ -99,13 +125,13 @@ class SqlAggregationFixtureTests(unittest.TestCase):
         db = sqlite3.connect(':memory:')
         self.addCleanup(db.close)
         db.execute("ATTACH DATABASE ':memory:' AS dbo")
-        db.execute('CREATE TABLE dbo.Alarm_History(AlarmId INTEGER, TagPath TEXT, CreatedTime TEXT)')
+        db.execute(PRODUCTION_SCHEMA)
         now = datetime(2026, 9, 19, 12)
         events = [(1,'A/B/Same',1), (1,'A/B/Same',2), (2,'A/C/Same',3),
                   (3,'A/D/Older',25), (4,'A/D/Week',100), (5,'A/D/Month',500),
                   (6,'A/D/Excluded',721), (7,'A/D/Future',-1)]
         for aid, path, age in events:
-            db.execute('INSERT INTO dbo.Alarm_History VALUES(?,?,?)',
+            db.execute('INSERT INTO dbo.Alarm_History(AlarmId,TagPath,CreatedTime) VALUES(?,?,?)',
                        (aid,path,(now-timedelta(hours=age)).isoformat()))
         class Cursor:
             def execute(self, sql, offset):
@@ -126,6 +152,57 @@ class SqlAggregationFixtureTests(unittest.TestCase):
                 self.assertEqual(result['alarms'][1]['alarm_id'],2)
                 self.assertAlmostEqual(result['alarms'][0]['percentage'],200/expected)
                 self.assertEqual(result['alarms'][-1]['cumulative_percentage'],100)
+
+class ProductionHistorySchemaTests(unittest.TestCase):
+    def test_history_queries_execute_without_alarm_lists_or_extra_columns(self):
+        import sqlite3
+        from contextlib import contextmanager
+        db = sqlite3.connect(':memory:', detect_types=sqlite3.PARSE_DECLTYPES)
+        self.addCleanup(db.close)
+        db.execute("ATTACH DATABASE ':memory:' AS dbo")
+        db.execute(PRODUCTION_SCHEMA)
+        for history_id in range(1, 106):
+            db.execute("INSERT INTO dbo.Alarm_History(HistoryId,AlarmId,TagId,TagPath,CurrentValue,CreatedTime) VALUES(?,?,?,?,?,?)",
+                       (history_id,7,8,'CB_MODBUS/MIX/ALM/CementFeed_ALM',1.5,datetime(2026,9,19,10)))
+        queries = []
+        class Cursor:
+            def execute(self, sql, *params):
+                queries.append(sql)
+                sql = sql.replace('TOP (?) ', '') + ' LIMIT ?'
+                return db.execute(sql, (*params[1:], params[0]))
+        class Connection:
+            def cursor(self): return Cursor()
+        @contextmanager
+        def fixture(): yield Connection()
+        with patch('history_store.connection',fixture):
+            first = store.history_page()
+            second = store.history_page(before=int(first['next_cursor']))
+            third = store.history_page(before=int(second['next_cursor']))
+            self.assertEqual([len(p['alarms']) for p in [first,second,third]], [50,50,5])
+            ids = [int(a['history_id']) for p in [first,second,third] for a in p['alarms']]
+            self.assertEqual(ids,list(range(105,0,-1)))
+            self.assertIsNone(third['next_cursor'])
+            selected = store.history_page(1, history_id=55)['alarms'][0]
+            self.assertEqual(selected['tag_name'],'CementFeed_ALM')
+            self.assertEqual(selected['kepware_path'],'CB_MODBUS.MIX.ALM.CementFeed_ALM')
+            self.assertEqual(selected['value'],1.5)
+            self.assertEqual(selected['activated_at'],'2026-09-19T10:00:00')
+            self.assertEqual(selected['state'],'UNKNOWN')
+            self.assertEqual(selected['priority'],0)
+            self.assertEqual(store.history_page(before=1)['alarms'],[])
+        for sql in queries:
+            for forbidden in ['Alarm_Lists', 'Priority', 'ActivatedTime', 'ClearedTime', 'State', 'KepwarePath', 'TagName']:
+                self.assertNotIn(forbidden,sql)
+
+    @patch('history_store.configured', return_value=True)
+    @patch('history_store.history_page', side_effect=RuntimeError('driver-specific SQL detail'))
+    def test_fallback_failure_logs_exception_but_returns_upstream_response(self, page, configured):
+        response = app.JSONResponse({'error':'OpcTagManager is unavailable.'},status_code=503)
+        with self.assertLogs('app',level='ERROR') as logs:
+            self.assertIs(app.sql_detail_fallback(response,55),response)
+        self.assertIn('history_id=55',logs.output[0])
+        self.assertIn('driver-specific SQL detail',logs.output[0])
+        self.assertNotIn(b'driver-specific',response.body)
 
 class ConfigurationTests(unittest.TestCase):
     @patch.dict('os.environ', {'ALARM_HELP_SQL_CONNECTION_STRING':'explicit'}, clear=True)

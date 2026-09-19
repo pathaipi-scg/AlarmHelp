@@ -1,4 +1,5 @@
 import json
+import logging
 import os
 from pathlib import Path
 from urllib.error import HTTPError, URLError
@@ -12,6 +13,7 @@ import history_store
 
 
 ROOT = Path(__file__).resolve().parent
+logger = logging.getLogger(__name__)
 
 
 def load_env_file(path: Path) -> None:
@@ -88,7 +90,7 @@ def sql_detail_fallback(response, history_id=None):
             return {"has_alarm": bool(rows), "alarm": rows[0] if rows else None,
                     "knowledge": None, "knowledge_unavailable": True}
         except Exception:
-            pass
+            logger.exception("SQL alarm detail fallback failed (history_id=%s)", history_id)
     return response
 
 
@@ -98,15 +100,17 @@ def history_list(limit: int = Query(default=50, ge=1, le=100),
     try:
         return history_store.history_page(limit, before)
     except Exception:
-        return JSONResponse({"error": "SQL alarm history is unavailable. Check AlarmHelp SQL configuration."}, status_code=503)
+        logger.exception("SQL alarm history read failed (limit=%s, before=%s)", limit, before)
+        return JSONResponse({"error": "SQL alarm history is unavailable."}, status_code=503)
 
 
 @app.get("/api/alarm-help/pareto")
-def pareto(window: str = Query(default="24h", pattern="^(24h|48h|1w|1m)$")):
+def pareto(window: str = Query(default="24h", pattern="^(24h|48h|1w|7d|1m|30d)$")):
     try:
         return history_store.pareto(window)
     except Exception:
-        return JSONResponse({"error": "SQL alarm Pareto is unavailable. Check AlarmHelp SQL configuration."}, status_code=503)
+        logger.exception("SQL alarm Pareto read failed (window=%s)", window)
+        return JSONResponse({"error": "SQL alarm Pareto is unavailable."}, status_code=503)
 
 
 @app.get("/api/alarm-help/history/{history_id}")

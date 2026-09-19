@@ -65,7 +65,8 @@ older cursor across refreshes. If more than 50 new rows arrived, bounded request
 fill the gap down to the previous refresh watermark. Existing loaded rows are
 retained; initial load never downloads the whole table.
 
-`GET /api/alarm-help/pareto?window=24h` accepts `24h`, `48h`, `1w`, `1m`.
+`GET /api/alarm-help/pareto?window=24h` accepts `24h`, `48h`, `7d`, `30d`,
+plus the existing UI aliases `1w` and `1m`.
 One month means a rolling 30 days. SQL applies a sargable `CreatedTime` range
 against `GETDATE()` (the same local clock used by the writer), then performs
 `COUNT_BIG(*) GROUP BY AlarmId`, ordered by count descending and AlarmId for ties.
@@ -105,33 +106,74 @@ This reads only connection settings from the existing file with python-dotenv;
 it does not import OpcTagManager or start its runtime. Credentials are not copied
 into tracked files. Driver AUTO and TLS options follow its connection conventions.
 Alternatively set `ALARM_HELP_SQL_CONNECTION_STRING`, which takes precedence.
-Use an account with SELECT on `dbo.Alarm_History` and `dbo.Alarm_Lists`.
+The direct SQL history/Pareto reader only requires SELECT on `dbo.Alarm_History`.
+It no longer joins `Alarm_Lists` for priority. The JSON priority default is 0 and
+runtime state is UNKNOWN; neither is read from a nonexistent history column.
 Connections and statements have 5-second and 8-second timeouts respectively.
 
-The authorized configuration reuse was set locally. A live read-only smoke test
-connected successfully, but SQL Server denied SELECT on `dbo.Alarm_History`
-(error 229). A database administrator must grant that permission to the configured
-SQL database user before the new features can read production history:
+The configuration reuse was verified against `OpcTagMgr` as
+`opc_tag_manager_runtime`. Read-only history and Pareto queries succeed. An
+isolated HTTP instance using the real SQL connection returned 200 for two
+50-row history pages and all six window values. SQL permissions, schema, and
+production services were not changed.
+
+The reported 503 was reproduced at `10.28.255.19:1866`, but not in an isolated
+HTTP instance of this checkout using the real SQL connection. No local process
+listened on port 1866. The deployed service also returned an OpcTagManager
+unavailable error from its legacy recent-history proxy. Its application files
+were not accessible at the corresponding Windows-share path, so its exact
+exception/configuration could not be inspected. None of the old queries
+referenced nonexistent Alarm_History columns. The earlier history query
+had an unnecessary `Alarm_Lists.Priority` dependency; that was removed, but it
+was not a reproduced failure. The Pareto query already used verified columns.
+The previous blanket exception handlers hid the useful diagnostic information.
+They now log the original exception and traceback using the application logger,
+with limit/cursor/window context, while returning a generic safe 503 JSON error.
+SQL fallback failures are logged too. Connection strings are not logged.
+
+If a deployed instance still returns 503, capture its server-side traceback and
+confirm its checkout, Python environment, and SQL configuration source. Do not
+infer a permission or schema problem from the generic HTTP status alone. No
+production restart is performed by the tests or this implementation.
+
+## Verified production schema and final queries
+
+The production Alarm_History columns are `HistoryId`, `AlarmId`, `TagId`,
+`TagPath`, `AlarmMode`, `ThresholdHigh`, `ThresholdLow`, `CurrentValue`, `Mp3File`,
+and `CreatedTime`. The reader uses only this table. The response's `activated_at`
+is derived from CreatedTime; `kepware_path` normalizes TagPath separators and
+`tag_name` is its final segment. Those response keys are not SQL column names.
+
+History reads `limit + 1` rows to determine whether another page exists:
 
 ```sql
--- Review the database principal name before execution. Not applied automatically.
-USE [OpcTagMgr];
-GRANT SELECT ON OBJECT::dbo.Alarm_History TO [configured_database_user];
--- Also required if the account does not already have this permission:
-GRANT SELECT ON OBJECT::dbo.Alarm_Lists TO [configured_database_user];
+SELECT TOP (?) h.HistoryId, h.AlarmId, h.TagPath,
+       h.CurrentValue, h.CreatedTime
+FROM dbo.Alarm_History h
+WHERE h.HistoryId < ?
+ORDER BY h.HistoryId DESC
 ```
 
-No table/schema changes are required. No index or permission changes were applied.
-The checked-in upstream schema has a clustered primary key on HistoryId but no
-CreatedTime index. Live index inspection was inconclusive because the login lacks
-table visibility. After inspecting existing production indexes, a DBA should
-consider a covering nonclustered index on `(CreatedTime)` including `(AlarmId,
-TagPath)` to support large time-range aggregations. Review storage/write overhead
-and the query plan first; this is a recommendation, not an applied migration.
+The initial page omits WHERE; a selected occurrence uses `WHERE h.HistoryId = ?`.
+The default limit of 50 returns up to 50 rows from a bounded 51-row SQL read.
+HistoryId determines stable paging/order, while CreatedTime supplies the actual
+occurrence timestamp shown by the UI.
 
-Production was not restarted, simulated, committed, or pushed. After permissions
-are granted, verify bounded history and time-window aggregation on the real database
-and schedule the normal AlarmHelp restart separately.
+```sql
+DECLARE @end datetime = GETDATE();
+SELECT AlarmId, MAX(TagPath) AS TagPath, COUNT_BIG(*) AS Occurrences
+FROM dbo.Alarm_History
+WHERE CreatedTime >= DATEADD(hour, ?, @end) AND CreatedTime <= @end
+GROUP BY AlarmId
+ORDER BY Occurrences DESC, AlarmId ASC
+```
+
+The parameter is -24, -48, -168, or -720 hours. AlarmId is the stable grouping
+identity; TagPath is a representative source/display path. Percentages and
+cumulative percentages use the total of every returned group, before chart
+truncation. No table/schema/index change is required for correctness or applied
+by this work. The earlier recommendation to review a CreatedTime covering index
+for large tables remains optional and requires checking existing indexes/plans.
 
 ## Regression checks
 
@@ -146,4 +188,6 @@ The UI suite uses Node 22+, a separate headless Chrome profile, an ephemeral
 loopback server, and synthetic API responses. It never contacts production.
 Set `CHROME_PATH` if Chrome is not installed at the standard Windows path.
 Screenshots and results are written to ignored `.test-artifacts/`.
-Backend unit tests mock SQL connections; they do not claim live database validation.
+Backend tests cover mocked failures and execute queries against a local fixture
+with the exact production column names (only SQL dialect syntax is translated).
+The separate read-only HTTP smoke test also verified the real SQL Server results.

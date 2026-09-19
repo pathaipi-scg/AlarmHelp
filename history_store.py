@@ -58,6 +58,8 @@ def configured():
     return bool(os.getenv('ALARM_HELP_SQL_CONNECTION_STRING') or os.getenv('ALARM_HELP_SQL_ENV_FILE'))
 
 def history_page(limit=50, before=None, history_id=None):
+    # Query only verified Alarm_History columns. State/priority are response
+    # defaults, not persisted history fields; CreatedTime is the occurrence time.
     clauses, params = [], [limit + 1]
     if before is not None:
         clauses.append('h.HistoryId < ?')
@@ -69,9 +71,8 @@ def history_page(limit=50, before=None, history_id=None):
     with connection() as conn:
         rows = conn.cursor().execute(f'''
             SELECT TOP (?) h.HistoryId, h.AlarmId, h.TagPath,
-                   h.CurrentValue, h.CreatedTime, a.Priority
+                   h.CurrentValue, h.CreatedTime
             FROM dbo.Alarm_History h
-            LEFT JOIN dbo.Alarm_Lists a ON a.AlarmId = h.AlarmId
             {where} ORDER BY h.HistoryId DESC
         ''', *params).fetchall()
     alarms = []
@@ -79,11 +80,12 @@ def history_page(limit=50, before=None, history_id=None):
         path = row[2].replace('/', '.')
         alarms.append(dict(history_id=str(row[0]), alarm_id=row[1], kepware_path=path,
                            tag_name=path.split('.')[-1], value=row[3],
-                           activated_at=row[4].isoformat(), priority=row[5] or 0,
+                           activated_at=row[4].isoformat(), priority=0,
                            state='UNKNOWN'))
     return {'alarms': alarms, 'next_cursor': alarms[-1]['history_id'] if len(rows) > limit else None}
 
-WINDOW_HOURS = {'24h': 24, '48h': 48, '1w': 168, '1m': 720}
+# Keep existing UI values; accept explicit day-based API aliases as well.
+WINDOW_HOURS = {'24h': 24, '48h': 48, '1w': 168, '7d': 168, '1m': 720, '30d': 720}
 
 def pareto(window):
     # SQL local time matches the history writer's GETDATE()/datetime timestamps.
